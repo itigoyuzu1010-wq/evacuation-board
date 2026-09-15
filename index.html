@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>避難用簡易掲示板</title>
+
+
+    <style>
+
+        body {
+            font-family: sans-serif;
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 0 10px;
+        }
+
+
+        .post {
+            border-bottom: 1px solid #ccc;
+            padding: 10px 0;
+        }
+
+
+        .post-name {
+            font-weight: bold;
+            color: #333;
+        }
+
+
+        .post-date {
+            font-size: 0.8em;
+            color: #777;
+        }
+
+
+        .post-content {
+            background-color: white;
+            white-space: pre-wrap;
+            overflow-wrap: break-word;
+        }
+
+
+        textarea,
+        input {
+            width: 100%;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+
+
+        button {
+            padding: 10px 15px;
+            cursor: pointer;
+        }
+
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+
+        /* 自分の投稿削除ボタン */
+
+        .delete-button {
+            color: #ff5555;
+            background-color: white;
+            border: 1px solid #ff5555;
+            padding: 5px 10px;
+            border-radius: 100px;
+            cursor: pointer;
+        }
+
+
+        .delete-button:hover {
+            background-color: #ff5555;
+            color: white;
+        }
+
+
+        /* 管理者削除ボタン */
+
+        .admin-delete-button {
+            color: white;
+            background-color: #ff5555;
+            border: 1px solid #ff5555;
+            padding: 5px 10px;
+            border-radius: 100px;
+            cursor: pointer;
+        }
+
+
+        .admin-delete-button:hover {
+            background-color: #cc3333;
+        }
+
+
+        /* 管理者エリア */
+
+        .admin-area {
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+
+
+        #adminStatus {
+            color: #d33;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+
+        /* エラーメッセージ */
+
+        #errorMessage {
+            color: #d33;
+            margin-top: 15px;
+        }
+
+    </style>
+
+
+    <link
+        type="text/css"
+        rel="stylesheet"
+        href="css/style.css"
+    >
+
+</head>
+
+
+<body>
+
+
+    <h1>Stanza degli ospiti.</h1>
+
+
+    <h4>
+        オープンチャットができない人や、オプが何かしらの理由で使えなくなった時に使える掲示板です。
+        互いに思いやりの心をもって利用してくださいね。
+    </h4>
+
+
+    <!-- 名前 -->
+
+    <input
+        type="text"
+        id="name"
+        placeholder="名前"
+        maxlength="20"
+    >
+
+
+    <!-- メッセージ -->
+
+    <textarea
+        id="message"
+        placeholder="メッセージ（500字まで）"
+        rows="4"
+        maxlength="500"
+    ></textarea>
+
+
+    <!-- 投稿ボタン -->
+
+    <button
+        id="postButton"
+        style="
+            color: #7fd382;
+            border-color:#ffee00 #ffcc11;
+            padding: 10px 20px;
+            border-radius: 100px;
+        "
+    >
+        投稿する
+    </button>
+
+
+    <!-- 管理者 -->
+
+    <div class="admin-area">
+
+        <button id="adminButton">
+            管理者ログイン
+        </button>
+
+        <span id="adminStatus"></span>
+
+    </div>
+
+
+    <!-- エラー表示 -->
+
+    <div id="errorMessage"></div>
+
+
+    <!-- 投稿一覧 -->
+
+    <div id="board"></div>
+
+
+
+    <!-- ==========================================
+         Firebase
+    =========================================== -->
+
+    <script type="module">
+
+
+        // ==========================================
+        // Firebase SDK
+        // ==========================================
+
+        import {
+            initializeApp
+        } from
+        "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+
+
+        import {
+            getFirestore,
+            collection,
+            addDoc,
+            deleteDoc,
+            doc,
+            query,
+            orderBy,
+            onSnapshot
+        } from
+        "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+
+
+        // ==========================================
+        // Firebase設定
+        // ==========================================
+
+        const firebaseConfig = {
+
+            apiKey:
+                "AIzaSyDN1vheeWKo6QJvLEXhtt0QU0arNhULAwc",
+
+            authDomain:
+                "evacuation-board.firebaseapp.com",
+
+            projectId:
+                "evacuation-board",
+
+            storageBucket:
+                "evacuation-board.firebasestorage.app",
+
+            messagingSenderId:
+                "1047804217538",
+
+            appId:
+                "1:1047804217538:web:a6c93f2b55937b1805535b"
+        };
+
+
+
+        // ==========================================
+        // Firebaseを初期化
+        // ==========================================
+
+        const app =
+            initializeApp(firebaseConfig);
+
+
+
+        // ==========================================
+        // Firestore
+        // ==========================================
+
+        const db =
+            getFirestore(app);
+
+
+
+        // ==========================================
+        // 投稿コレクション
+        // ==========================================
+
+        const postsRef =
+            collection(
+                db,
+                "boardPosts"
+            );
+
+
+
+        // ==========================================
+        // 管理者設定
+        // ==========================================
+
+        /*
+         * ここを新しいパスワードに変更してください。
+         *
+         * 注意：
+         * この方式ではHTMLを見ることで
+         * パスワードを確認できます。
+         *
+         * 本格的な公開運用ではFirebase Authentication
+         * を使用することを推奨します。
+         */
+
+        const ADMIN_PASSWORD =
+            "CHANGE_THIS_PASSWORD";
+
+
+
+        // ==========================================
+        // Cookie
+        // ==========================================
+
+
+        function getCookie(name) {
+
+            const cookies =
+                document.cookie.split("; ");
+
+
+            for (
+                const cookie of cookies
+            ) {
+
+                const parts =
+                    cookie.split("=");
+
+
+                const key =
+                    parts.shift();
+
+
+                const value =
+                    parts.join("=");
+
+
+                if (key === name) {
+
+                    return decodeURIComponent(
+                        value
+                    );
+
+                }
+
+            }
+
+
+            return null;
+        }
+
+
+
+        function setCookie(
+            name,
+            value,
+            days
+        ) {
+
+            const expires =
+                new Date();
+
+
+            expires.setTime(
+                expires.getTime() +
+                days *
+                24 *
+                60 *
+                60 *
+                1000
+            );
+
+
+            document.cookie =
+                name +
+                "=" +
+                encodeURIComponent(value) +
+                "; expires=" +
+                expires.toUTCString() +
+                "; path=/; SameSite=Lax";
+        }
+
+
+
+        // ==========================================
+        // 自分のユーザーID
+        // ==========================================
+
+        let myUserId =
+            getCookie(
+                "boardUserId"
+            );
+
+
+        if (!myUserId) {
+
+            myUserId =
+                crypto.randomUUID();
+
+
+            setCookie(
+                "boardUserId",
+                myUserId,
+                365
+            );
+        }
+
+
+
+        // ==========================================
+        // 管理者状態
+        // ==========================================
+
+        let isAdmin = false;
+
+
+
+        // ==========================================
+        // 現在の投稿
+        // ==========================================
+
+        let currentPosts = [];
+
+
+
+        // ==========================================
+        // エラー表示
+        // ==========================================
+
+        function showError(message) {
+
+            document.getElementById(
+                "errorMessage"
+            ).textContent = message;
+        }
+
+
+
+        // ==========================================
+        // 投稿
+        // ==========================================
+
+        async function postMessage() {
+
+            const nameInput =
+                document.getElementById(
+                    "name"
+                );
+
+
+            const messageInput =
+                document.getElementById(
+                    "message"
+                );
+
+
+            const postButton =
+                document.getElementById(
+                    "postButton"
+                );
+
+
+            const name =
+                nameInput.value.trim();
+
+
+            const message =
+                messageInput.value.trim();
+
+
+
+            // 空欄チェック
+
+            if (
+                !name ||
+                !message
+            ) {
+
+                alert(
+                    "名前とメッセージを入力してください。"
+                );
+
+                return;
+            }
+
+
+
+            // 投稿ボタンを無効化
+
+            postButton.disabled = true;
+
+
+            showError("");
+
+
+
+            try {
+
+                await addDoc(
+                    postsRef,
+                    {
+
+                        userId:
+                            myUserId,
+
+                        name:
+                            name,
+
+                        message:
+                            message,
+
+                        date:
+                            new Date()
+                                .toLocaleString(
+                                    "ja-JP"
+                                ),
+
+                        createdAt:
+                            Date.now()
+                    }
+                );
+
+
+                // メッセージを消す
+
+                messageInput.value = "";
+
+
+            } catch (error) {
+
+                console.error(
+                    "投稿エラー:",
+                    error
+                );
+
+
+                alert(
+                    "投稿に失敗しました。"
+                );
+
+
+                showError(
+                    "投稿できませんでした。Firestoreの設定を確認してください。"
+                );
+
+
+            } finally {
+
+                postButton.disabled = false;
+
+            }
+
+        }
+
+
+
+        // ==========================================
+        // 投稿削除
+        // ==========================================
+
+        async function deletePost(
+            postId,
+            userId
+        ) {
+
+
+            // 自分の投稿か
+
+            const isMyPost =
+                userId === myUserId;
+
+
+
+            // 自分でも管理者でもない
+
+            if (
+                !isMyPost &&
+                !isAdmin
+            ) {
+
+                alert(
+                    "この投稿を削除する権限がありません。"
+                );
+
+                return;
+            }
+
+
+
+            // 確認メッセージ
+
+            let confirmation;
+
+
+            if (
+                isAdmin &&
+                !isMyPost
+            ) {
+
+                confirmation =
+                    "管理者権限でこの投稿を削除しますか？";
+
+            } else {
+
+                confirmation =
+                    "この投稿を削除しますか？";
+
+            }
+
+
+
+            if (
+                !confirm(
+                    confirmation
+                )
+            ) {
+
+                return;
+            }
+
+
+
+            try {
+
+                await deleteDoc(
+                    doc(
+                        db,
+                        "boardPosts",
+                        postId
+                    )
+                );
+
+
+            } catch (error) {
+
+                console.error(
+                    "削除エラー:",
+                    error
+                );
+
+
+                alert(
+                    "削除に失敗しました。"
+                );
+
+
+                showError(
+                    "削除できませんでした。Firestoreのルールを確認してください。"
+                );
+
+            }
+
+        }
+
+
+
+        // ==========================================
+        // 管理者ログイン
+        // ==========================================
+
+        function adminLogin() {
+
+
+            // すでに管理者ならログアウト
+
+            if (isAdmin) {
+
+                isAdmin = false;
+
+
+                document.getElementById(
+                    "adminStatus"
+                ).textContent = "";
+
+
+                document.getElementById(
+                    "adminButton"
+                ).textContent =
+                    "管理者ログイン";
+
+
+                displayPosts();
+
+
+                return;
+            }
+
+
+
+            // パスワード入力
+
+            const password =
+                prompt(
+                    "管理者パスワードを入力してください。"
+                );
+
+
+
+            // キャンセル
+
+            if (
+                password === null
+            ) {
+
+                return;
+            }
+
+
+
+            // パスワード確認
+
+            if (
+                password ===
+                ADMIN_PASSWORD
+            ) {
+
+                isAdmin = true;
+
+
+                document.getElementById(
+                    "adminStatus"
+                ).textContent =
+                    "【管理者モード】";
+
+
+                document.getElementById(
+                    "adminButton"
+                ).textContent =
+                    "管理者ログアウト";
+
+
+                displayPosts();
+
+
+            } else {
+
+                alert(
+                    "パスワードが違います。"
+                );
+
+            }
+
+        }
+
+
+
+        // ==========================================
+        // 投稿表示
+        // ==========================================
+
+        function displayPosts() {
+
+            const board =
+                document.getElementById(
+                    "board"
+                );
+
+
+            board.innerHTML = "";
+
+
+
+            currentPosts.forEach(
+                post => {
+
+
+                    // 投稿全体
+
+                    const div =
+                        document.createElement(
+                            "div"
+                        );
+
+
+                    div.className =
+                        "post";
+
+
+
+                    // 名前
+
+                    const name =
+                        document.createElement(
+                            "div"
+                        );
+
+
+                    name.className =
+                        "post-name";
+
+
+                    name.textContent =
+                        post.name;
+
+
+
+                    // 日付
+
+                    const date =
+                        document.createElement(
+                            "div"
+                        );
+
+
+                    date.className =
+                        "post-date";
+
+
+                    date.textContent =
+                        post.date;
+
+
+
+                    // メッセージ
+
+                    const message =
+                        document.createElement(
+                            "p"
+                        );
+
+
+                    message.className =
+                        "post-content";
+
+
+                    message.textContent =
+                        post.message;
+
+
+
+                    // 追加
+
+                    div.appendChild(
+                        name
+                    );
+
+
+                    div.appendChild(
+                        date
+                    );
+
+
+                    div.appendChild(
+                        message
+                    );
+
+
+
+                    // ==================================
+                    // 自分の投稿
+                    // ==================================
+
+                    if (
+                        post.userId ===
+                        myUserId
+                    ) {
+
+
+                        const button =
+                            document.createElement(
+                                "button"
+                            );
+
+
+                        button.textContent =
+                            "この投稿を削除";
+
+
+                        button.className =
+                            "delete-button";
+
+
+
+                        button.addEventListener(
+                            "click",
+                            function () {
+
+                                deletePost(
+                                    post.id,
+                                    post.userId
+                                );
+
+                            }
+                        );
+
+
+                        div.appendChild(
+                            button
+                        );
+
+                    }
+
+
+
+                    // ==================================
+                    // 管理者
+                    // ==================================
+
+                    if (
+                        isAdmin &&
+                        post.userId !==
+                        myUserId
+                    ) {
+
+
+                        const button =
+                            document.createElement(
+                                "button"
+                            );
+
+
+                        button.textContent =
+                            "管理者：この投稿を削除";
+
+
+                        button.className =
+                            "admin-delete-button";
+
+
+
+                        button.addEventListener(
+                            "click",
+                            function () {
+
+                                deletePost(
+                                    post.id,
+                                    post.userId
+                                );
+
+                            }
+                        );
+
+
+                        div.appendChild(
+                            button
+                        );
+
+                    }
+
+
+
+                    board.appendChild(
+                        div
+                    );
+
+                }
+            );
+
+        }
+
+
+
+        // ==========================================
+        // Firestoreリアルタイム監視
+        // ==========================================
+
+        const postsQuery =
+            query(
+                postsRef,
+                orderBy(
+                    "createdAt",
+                    "desc"
+                )
+            );
+
+
+
+        onSnapshot(
+            postsQuery,
+
+            function (snapshot) {
+
+
+                currentPosts =
+                    snapshot.docs.map(
+                        function (
+                            document
+                        ) {
+
+                            return {
+
+                                id:
+                                    document.id,
+
+                                ...document.data()
+
+                            };
+
+                        }
+                    );
+
+
+                displayPosts();
+
+            },
+
+
+            function (error) {
+
+                console.error(
+                    "Firestore読み込みエラー:",
+                    error
+                );
+
+
+                showError(
+                    "投稿を読み込めません。Firestoreの設定またはセキュリティルールを確認してください。"
+                );
+
+            }
+        );
+
+
+
+        // ==========================================
+        // ボタンイベント
+        // ==========================================
+
+        document
+            .getElementById(
+                "postButton"
+            )
+            .addEventListener(
+                "click",
+                postMessage
+            );
+
+
+
+        document
+            .getElementById(
+                "adminButton"
+            )
+            .addEventListener(
+                "click",
+                adminLogin
+            );
+
+
+    </script>
+
+
+    <!--
+        外部JavaScriptを使用する場合はここに記述
+    -->
+
+    <script
+        type="text/javascript"
+        src="js/script.js"
+    ></script>
+
+
+</body>
+
+</html>
