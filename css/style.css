@@ -1,0 +1,13 @@
+body {
+  margin: 0;
+  height: 100vh; /* 画面全体の高さ */
+  background: linear-gradient(
+    to right,       /* 左から右へ */
+    #a0d48c 0%,     /* 緑系 - 左側 */
+    #a0d48c 33.33%, 
+    #ffffff 33.33%, /* 白 - 中央 */
+    #ffffff 66.66%, 
+    #d18484 66.66%, /* 赤系 - 右側 */
+    #d18484 100%
+  );
+}
