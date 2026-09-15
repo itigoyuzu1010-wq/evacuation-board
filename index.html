@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>避難用簡易掲示板</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 0 10px;
+        }
+
+        .post {
+            border-bottom: 1px solid #ccc;
+            padding: 10px 0;
+        }
+
+        .post-name {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .post-date {
+            font-size: 0.8em;
+            color: white;
+        }
+
+        .post-content {
+            background-color: white;
+        }
+
+        textarea,
+        input {
+            width: 100%;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 10px 15px;
+            cursor: pointer;
+        }
+
+        /* 自分の投稿の削除ボタン */
+        .delete-button {
+            color: #ff5555;
+            background-color: white;
+            border: 1px solid #ff5555;
+            padding: 5px 10px;
+            border-radius: 100px;
+            cursor: pointer;
+        }
+
+        /* 管理者の削除ボタン */
+        .admin-delete-button {
+            color: white;
+            background-color: #ff5555;
+            border: 1px solid #ff5555;
+            padding: 5px 10px;
+            border-radius: 100px;
+            cursor: pointer;
+        }
+
+        /* 管理者ログイン */
+        .admin-login {
+            margin-top: 20px;
+            color: #555;
+        }
+
+        #adminStatus {
+            color: #d33;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+    </style>
+
+    <link type="text/css" rel="stylesheet" href="css/style.css"/>
+</head>
+
+<body>
+
+    <h1>Stanza degli ospiti.</h1>
+
+    <h4>
+        オープンチャットができない人や、オプが何かしらの理由で使えなくなった時に使える掲示板です。
+        互いに思いやりの心をもって利用してくださいね。
+    </h4>
+
+    <input
+        type="text"
+        id="name"
+        placeholder="名前"
+        maxlength="20"
+    >
+
+    <textarea
+        id="message"
+        placeholder="メッセージ（500字まで）"
+        rows="4"
+        maxlength="500"
+    ></textarea>
+
+    <button
+        onclick="postMessage()"
+        style="
+            color: #7fd382;
+            border-color:#ffee00 #ffcc11;
+            padding: 10px 20px;
+            border-radius: 100px;
+        "
+    >
+        投稿する
+    </button>
+
+
+    <!-- 管理者ログイン -->
+    <div class="admin-login">
+
+        <button onclick="adminLogin()">
+            管理者ログイン
+        </button>
+
+        <span id="adminStatus"></span>
+
+    </div>
+
+
+    <div id="board"></div>
+
+
+    <script>
+
+        // ==========================================
+        // 管理者設定
+        // ==========================================
+
+        // ここを好きなパスワードに変更してください
+        const ADMIN_PASSWORD = "12ItaryPizza";
+
+
+        // ==========================================
+        // Cookie関連
+        // ==========================================
+
+        // Cookieから値を取得する
+        function getCookie(name) {
+
+            const cookies = document.cookie.split("; ");
+
+            for (const cookie of cookies) {
+
+                const [key, ...value] = cookie.split("=");
+
+                if (key === name) {
+                    return decodeURIComponent(value.join("="));
+                }
+            }
+
+            return null;
+        }
+
+
+        // Cookieに値を保存する
+        function setCookie(name, value, days) {
+
+            const date = new Date();
+
+            date.setTime(
+                date.getTime() +
+                (days * 24 * 60 * 60 * 1000)
+            );
+
+            document.cookie =
+                name + "=" +
+                encodeURIComponent(value) +
+                "; expires=" +
+                date.toUTCString() +
+                "; path=/; SameSite=Lax";
+        }
+
+
+        // ==========================================
+        // 自分のID
+        // ==========================================
+
+        let myUserId = getCookie("boardUserId");
+
+
+        // Cookieがまだない場合は新しく作る
+        if (!myUserId) {
+
+            myUserId = crypto.randomUUID();
+
+            // 1年間保存
+            setCookie(
+                "boardUserId",
+                myUserId,
+                365
+            );
+        }
+
+
+        // ==========================================
+        // 管理者状態
+        // ==========================================
+
+        let isAdmin = false;
+
+
+        // ==========================================
+        // XSS対策
+        // ==========================================
+
+        function escapeHTML(str) {
+
+            return str.replace(
+                /[&"<>]/g,
+                (m) => ({
+                    "&": "&amp;",
+                    '"': "&quot;",
+                    "<": "&lt;",
+                    ">": "&gt;"
+                })[m]
+            );
+        }
+
+
+        // ==========================================
+        // 投稿機能
+        // ==========================================
+
+        function postMessage() {
+
+            const nameInput =
+                document.getElementById("name");
+
+            const messageInput =
+                document.getElementById("message");
+
+
+            const name =
+                nameInput.value.trim();
+
+            const message =
+                messageInput.value.trim();
+
+
+            if (!name || !message) {
+
+                alert(
+                    "名前とメッセージを入力してください。"
+                );
+
+                return;
+            }
+
+
+            // 投稿データ
+            const post = {
+
+                // 投稿ごとの固有ID
+                id: crypto.randomUUID(),
+
+                // Cookieに保存されている自分のID
+                userId: myUserId,
+
+                name: escapeHTML(name),
+
+                message: escapeHTML(message),
+
+                date:
+                    new Date().toLocaleString("ja-JP")
+            };
+
+
+            // 既存データ取得
+            let posts = JSON.parse(
+                localStorage.getItem("boardPosts")
+                || "[]"
+            );
+
+
+            // 新しい投稿を先頭に追加
+            posts.unshift(post);
+
+
+            // 保存
+            localStorage.setItem(
+                "boardPosts",
+                JSON.stringify(posts)
+            );
+
+
+            // メッセージ欄をクリア
+            messageInput.value = "";
+
+
+            // 再表示
+            displayPosts();
+        }
+
+
+        // ==========================================
+        // 投稿削除
+        // ==========================================
+
+        function deletePost(postId) {
+
+            let posts = JSON.parse(
+                localStorage.getItem("boardPosts")
+                || "[]"
+            );
+
+
+            // 削除対象の投稿
+            const post = posts.find(
+                p => p.id === postId
+            );
+
+
+            if (!post) {
+
+                alert("投稿が見つかりません。");
+
+                return;
+            }
+
+
+            // 自分の投稿か確認
+            const isMyPost =
+                post.userId === myUserId;
+
+
+            /*
+             * 自分の投稿でも管理者でもない場合
+             * 削除できない
+             */
+            if (!isMyPost && !isAdmin) {
+
+                alert(
+                    "この投稿を削除する権限がありません。"
+                );
+
+                return;
+            }
+
+
+            // 確認
+            if (isAdmin && !isMyPost) {
+
+                if (!confirm(
+                    "管理者権限でこの投稿を削除しますか？"
+                )) {
+                    return;
+                }
+
+            } else {
+
+                if (!confirm(
+                    "この投稿を削除しますか？"
+                )) {
+                    return;
+                }
+            }
+
+
+            // 投稿を削除
+            posts = posts.filter(
+                p => p.id !== postId
+            );
+
+
+            // 保存
+            localStorage.setItem(
+                "boardPosts",
+                JSON.stringify(posts)
+            );
+
+
+            // 再表示
+            displayPosts();
+        }
+
+
+        // ==========================================
+        // 管理者ログイン
+        // ==========================================
+
+        function adminLogin() {
+
+            // すでに管理者ならログアウト
+            if (isAdmin) {
+
+                isAdmin = false;
+
+                document.getElementById(
+                    "adminStatus"
+                ).textContent = "";
+
+                displayPosts();
+
+                alert("管理者モードを終了しました。");
+
+                return;
+            }
+
+
+            // パスワード入力
+            const password = prompt(
+                "管理者パスワードを入力してください。"
+            );
+
+
+            // キャンセル
+            if (password === null) {
+                return;
+            }
+
+
+            // パスワード確認
+            if (password === ADMIN_PASSWORD) {
+
+                isAdmin = true;
+
+                document.getElementById(
+                    "adminStatus"
+                ).textContent =
+                    "【管理者モード】";
+
+                alert(
+                    "管理者としてログインしました。"
+                );
+
+                displayPosts();
+
+            } else {
+
+                alert(
+                    "パスワードが違います。"
+                );
+            }
+        }
+
+
+        // ==========================================
+        // 投稿表示
+        // ==========================================
+
+        function displayPosts() {
+
+            const board =
+                document.getElementById("board");
+
+
+            board.innerHTML = "";
+
+
+            const posts = JSON.parse(
+                localStorage.getItem("boardPosts")
+                || "[]"
+            );
+
+
+            posts.forEach(p => {
+
+                const div =
+                    document.createElement("div");
+
+                div.className = "post";
+
+
+                // 投稿内容
+                div.innerHTML = `
+                    <div class="post-name">
+                        ${p.name}
+                    </div>
+
+                    <div class="post-date">
+                        ${p.date}
+                    </div>
+
+                    <p>
+                        ${p.message}
+                    </p>
+                `;
+
+
+                // ==================================
+                // 削除ボタン
+                // ==================================
+
+                // 自分の投稿
+                if (p.userId === myUserId) {
+
+                    const deleteButton =
+                        document.createElement("button");
+
+                    deleteButton.textContent =
+                        "この投稿を削除";
+
+                    deleteButton.className =
+                        "delete-button";
+
+                    deleteButton.onclick = function() {
+
+                        deletePost(p.id);
+
+                    };
+
+                    div.appendChild(deleteButton);
+                }
+
+
+                // ==================================
+                // 管理者の場合
+                // ==================================
+
+                if (isAdmin) {
+
+                    // 自分の投稿には
+                    // 管理者ボタンを追加しない
+                    if (p.userId !== myUserId) {
+
+                        const adminDeleteButton =
+                            document.createElement("button");
+
+                        adminDeleteButton.textContent =
+                            "管理者：この投稿を削除";
+
+                        adminDeleteButton.className =
+                            "admin-delete-button";
+
+                        adminDeleteButton.onclick =
+                            function() {
+
+                                deletePost(p.id);
+
+                            };
+
+                        div.appendChild(
+                            adminDeleteButton
+                        );
+                    }
+                }
+
+
+                board.appendChild(div);
+
+            });
+        }
+
+
+        // ==========================================
+        // ページ読み込み時
+        // ==========================================
+
+        displayPosts();
+
+    </script>
+
+
+    <script
+        type="text/javascript"
+        src="js/script.js">
+    </script>
+
+</body>
+</html>
